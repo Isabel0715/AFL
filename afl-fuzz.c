@@ -3452,6 +3452,7 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
 
   fprintf(f, "start_time        : %llu\n"
              "last_update       : %llu\n"
+             "exec_duration     : %llu\n"
              "fuzzer_pid        : %u\n"
              "cycles_done       : %llu\n"
              "execs_done        : %llu\n"
@@ -3469,6 +3470,8 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
              "bitmap_cvg        : %0.02f%%\n"
              "unique_crashes    : %llu\n"
              "unique_hangs      : %llu\n"
+             "crash_rate        : %0.02f%%\n"
+             "hang_rate         : %0.02f%%\n"
              "last_path         : %llu\n"
              "last_crash        : %llu\n"
              "last_hang         : %llu\n"
@@ -3479,12 +3482,13 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
              "target_mode       : %s%s%s%s%s%s%s\n"
              "command_line      : %s\n"
              "slowest_exec_ms   : %llu\n",
-             start_time / 1000, get_cur_time() / 1000, getpid(),
+             start_time / 1000, get_cur_time() / 1000, (get_cur_time()-start_time) / 1000, getpid(),
              queue_cycle ? (queue_cycle - 1) : 0, total_execs, eps,
              queued_paths, queued_favored, queued_discovered, queued_imported,
              max_depth, current_entry, pending_favored, pending_not_fuzzed,
              queued_variable, stability, bitmap_cvg, unique_crashes,
-             unique_hangs, last_path_time / 1000, last_crash_time / 1000,
+             unique_hangs, ((double)unique_crashes) * 100 / queued_paths , ((double)unique_hangs) * 100 / queued_paths,
+             last_path_time / 1000, last_crash_time / 1000,
              last_hang_time / 1000, total_execs - last_crash_execs,
              exec_tmout, use_banner,
              qemu_mode ? "qemu " : "", dumb_mode ? " dumb " : "",
@@ -4142,6 +4146,21 @@ static void show_stats(void) {
        DTD(cur_ms, last_crash_time), unique_crashes ? cLRD : cRST,
        tmp);
 
+
+  u8 automatically_kill = 0;
+
+  // if(last_crash_time && last_hang_time && (cur_ms - last_crash_time) / 1000 > 3600 && (cur_ms - last_hang_time) / 1000 > 3600 ){
+    
+  //   automatically_kill = 1;
+
+  // }
+
+  // if the testing runs more than an hour, then automatically kiil it.
+  if(cur_ms && start_time && (cur_ms - start_time) / 1000 >= 3600 ) {
+    
+      automatically_kill = 1;
+  }
+
   sprintf(tmp, "%s%s", DI(unique_hangs),
          (unique_hangs >= KEEP_UNIQUE_HANG) ? "+" : "");
 
@@ -4389,6 +4408,21 @@ static void show_stats(void) {
          cpu_color, MIN(cur_utilization, 999));
 
 #endif /* ^HAVE_AFFINITY */
+
+
+  /* Automatically_kill the testing. */
+  if(automatically_kill == 1){
+    OKF("=================================================");
+    // OKF("There has been over an hour since last uniq crash and last uniq hang happened, the testing program will automatically kill itself.");
+
+    stop_soon = 1; 
+
+    if (child_pid > 0) kill(child_pid, SIGKILL);
+    if (forksrv_pid > 0) kill(forksrv_pid, SIGKILL);
+    OKF("=================================================");
+    
+  }
+
 
   } else SAYF("\r");
 
@@ -7473,6 +7507,10 @@ static void get_core_count(void) {
     OKF("You have %u CPU core%s and %u runnable tasks (utilization: %0.0f%%).",
         cpu_core_count, cpu_core_count > 1 ? "s" : "",
         cur_runnable, cur_runnable * 100.0 / cpu_core_count);
+    OKF("=================================================================");
+    OKF("=================================================================");
+    OKF("=================================================================");
+
 
     if (cpu_core_count > 1) {
 
@@ -8187,8 +8225,20 @@ stop_fuzzing:
   ck_free(sync_id);
 
   alloc_report();
-
   OKF("We're done here. Have a nice day!\n");
+
+
+  OKF("========================================================");
+  OKF("                         Report                         ");
+  OKF("========================================================");
+
+  OKF("Paths Total:       %36u",queued_paths);
+  OKF("Unique Crashes:    %36llu", unique_crashes);
+  OKF("Unique Hangs:      %36llu", unique_hangs);
+  OKF("Crash Rate:        %24.2f%% (%3llu / %3u)", ((double)unique_crashes) * 100 / queued_paths, unique_crashes, queued_paths);
+  OKF("Hang Rate:         %24.2f%% (%3llu / %3u)\n", ((double)unique_hangs) * 100 / queued_paths, unique_hangs, queued_paths);
+
+
 
   exit(0);
 
