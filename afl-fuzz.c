@@ -2283,6 +2283,30 @@ EXP_ST void init_forkserver(char** argv) {
 
 }
 
+/* After every exec(), test if some constraints are satisfied, then
+   kill the testing. */
+   
+static void kill_if_satisfied(){
+  u64 cur_ms;
+  cur_ms = get_cur_time();
+
+  // if the testing runs more than an hour, then automatically kiil it.
+  if(cur_ms && start_time && (cur_ms - start_time) > 0 && (cur_ms - start_time) / 1000 >= 3600 ) {
+    
+      /* Automatically_kill the testing. */
+    OKF("=================================================");
+    OKF("There has been over an hour since the test started, ");
+    OKF("the testing program will automatically kill itself.");
+
+    stop_soon = 1; 
+
+    if (child_pid > 0) kill(child_pid, SIGKILL);
+    if (forksrv_pid > 0) kill(forksrv_pid, SIGKILL);
+    OKF("=================================================");
+    
+
+  }
+}
 
 /* Execute target application, monitoring for timeouts. Return status
    information. The called program will update trace_bits[]. */
@@ -2496,6 +2520,7 @@ static u8 run_target(char** argv, u32 timeout) {
     slowest_exec_ms = exec_ms;
   }
 
+  kill_if_satisfied();
   return FAULT_NONE;
 
 }
@@ -4147,19 +4172,6 @@ static void show_stats(void) {
        tmp);
 
 
-  u8 automatically_kill = 0;
-
-  // if(last_crash_time && last_hang_time && (cur_ms - last_crash_time) / 1000 > 3600 && (cur_ms - last_hang_time) / 1000 > 3600 ){
-    
-  //   automatically_kill = 1;
-
-  // }
-
-  // if the testing runs more than an hour, then automatically kiil it.
-  if(cur_ms && start_time && (cur_ms - start_time) / 1000 >= 3600 ) {
-    
-      automatically_kill = 1;
-  }
 
   sprintf(tmp, "%s%s", DI(unique_hangs),
          (unique_hangs >= KEEP_UNIQUE_HANG) ? "+" : "");
@@ -4409,19 +4421,6 @@ static void show_stats(void) {
 
 #endif /* ^HAVE_AFFINITY */
 
-
-  /* Automatically_kill the testing. */
-  if(automatically_kill == 1){
-    OKF("=================================================");
-    // OKF("There has been over an hour since last uniq crash and last uniq hang happened, the testing program will automatically kill itself.");
-
-    stop_soon = 1; 
-
-    if (child_pid > 0) kill(child_pid, SIGKILL);
-    if (forksrv_pid > 0) kill(forksrv_pid, SIGKILL);
-    OKF("=================================================");
-    
-  }
 
 
   } else SAYF("\r");
